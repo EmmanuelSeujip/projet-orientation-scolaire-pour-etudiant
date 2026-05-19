@@ -1,0 +1,48 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.egg
+
+# --- Environnements virtuels ---
+.env
+.venv/
+venv/
+ENV/
+env/
+*.env
+
+# --- Logs & données temporaires ---
+*.log
+*.sqlite3
+*.db
+*.pid
+
+# --- IDE / éditeurs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Tests ---
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.mypy_cache/
+
+# --- Build / distribution ---
+build/
+dist/
+*.spec
+
+# --- FastAPI / Uvicorn ---
+# (si tu utilises uvicorn avec reload, il peut créer des fichiers temporaires)
+*.reload
+
+# --- Docker ---
+*.dockerfile
+docker-compose.override.yml
