@@ -46,3 +46,5 @@ dist/
 # --- Docker ---
 *.dockerfile
 docker-compose.override.yml
+
+student_model.pkl

@@ -1,2 +1,6 @@
 fastapi
 uvicorn
+huggingface_hub
+pandas
+numpy
+typing
