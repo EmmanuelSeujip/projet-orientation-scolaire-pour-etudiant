@@ -4,8 +4,7 @@ from backend.routes.forest_predict.encode_input import encode_input
 from backend.schema.studentInput import StudentInput
 
 router = APIRouter(
-    prefix="/forest_predict",
-    tags=["items"]
+    prefix="/forest_predict"
 )
 
 @router.post("/")

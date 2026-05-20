@@ -5,32 +5,39 @@ from huggingface_hub import hf_hub_download
 from typing import Literal
 import pickle
 import pandas as pd
+import os
 from backend.schema.studentInput import StudentInput
 from backend.routes.forest_predict.encode_input import encode_input
-
-
-
-# ── Chargement du modèle ──────────────────────────────────────────
-predictor = None
+from backend.models.student_predictor import StudentPredictorWithSGD
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global predictor
-
-    # local_path = hf_hub_download(
-    #     repo_id="EmmanuelSeujip/oulad-completion",  
-    #     filename="student_model.pkl"
-    # )
-    local_path = "student_model.pkl"  # Chemin local vers ton modèle
-    with open(local_path, "rb") as f:
-        data = pickle.load(f)
-
-    # Reconstruire l'objet StudentPredictorWithSGD depuis le pickle
-    import pickle as pkl
-    predictor = pkl.load(open(local_path, "rb"))  
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    local_path = os.path.join(base_dir, "student_model.pkl")
+    
+    predictor = StudentPredictorWithSGD().load(local_path)  # ✅ utilise .load()
     app.state.predictor = predictor
-    print("Modèle chargé ✓")
     yield
+
+# ── Chargement du modèle ──────────────────────────────────────────
+# predictor = None
+
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     global predictor
+
+#     # local_path = hf_hub_download(
+#     #     repo_id="EmmanuelSeujip/oulad-completion",  
+#     #     filename="student_model.pkl"
+#     # )
+#     base_dir = os.path.dirname(os.path.abspath(__file__))
+#     local_path = os.path.join(base_dir, "student_model.pkl")  # Chemin local vers ton modèle
+#     with open(local_path, "rb") as f:
+#         raw = pickle.load(f)
+#         predictor = raw["model"] if isinstance(raw, dict) and "model" in raw else raw
+#         app.state.predictor = predictor
+#         print("Modèle chargé ✓")
+#     yield
 
 
 app = FastAPI(lifespan=lifespan)
@@ -44,12 +51,20 @@ for router in all_routers:
 
 @app.post("/predict")
 def predict(student: StudentInput):
-    if predictor is None:
+    predictor_obj = app.state.predictor
+    if predictor_obj is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
+
+    # If the pickled object is a dict that wraps the real model, extract it
+    if isinstance(predictor_obj, dict):
+        if "model" in predictor_obj:
+            predictor_obj = predictor_obj["model"]
+        else:
+            raise HTTPException(status_code=500, detail="Pickle file does not contain a model under key 'model'")
 
     known = encode_input(student)
 
-    result_df: pd.DataFrame = predictor.predict(
+    result_df: pd.DataFrame = predictor_obj.predict(
         known=known,
         decode_labels=True,
         confidence=True,
