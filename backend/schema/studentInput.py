@@ -3,7 +3,7 @@
 from pydantic import BaseModel
 from typing import Literal, Optional
 from backend.schema.profil_social import ProfilSocial  # ← import correct
-
+from backend.schema.filiere_schema import FiliereLiteral
 
 class StudentInput(BaseModel):
     gender: Literal["M", "F"]
@@ -16,6 +16,6 @@ class StudentInput(BaseModel):
         "Post Graduate Qualification"
     ]
     profil_social: Optional[ProfilSocial] = None
-
+    filiere: Optional[FiliereLiteral] = None 
 
 StudentInput.model_rebuild()

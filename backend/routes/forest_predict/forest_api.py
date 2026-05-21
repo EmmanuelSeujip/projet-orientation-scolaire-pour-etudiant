@@ -4,7 +4,8 @@ import numpy as np
 from backend.routes.forest_predict.encode_input import encode_input
 from backend.schema.studentInput import StudentInput
 from backend.routes.forest_predict.calculer_multiplicateur_risque import calculer_multiplicateur_risque
-
+from backend.config.filiere import PROFILS_FILIERES
+from backend.routes.forest_predict.generer_message import generer_message_etudiant
 
 router = APIRouter(prefix="/forest_predict")
 
@@ -69,12 +70,26 @@ def predict_forest(student: StudentInput, request: Request):
 
         response[col] = entry
 
-    return {
-        "input": {
-            "gender":            student.gender,
-            "disability":        student.disability,
+    # ── Récupère le conseil filière si fourni ─────────────────────
+    conseil_filiere = None
+    if student.filiere:
+        profil = PROFILS_FILIERES[student.filiere]
+        conseil_filiere = profil["label"] + " — " + profil["conseil_specifique"]
+
+    # ── Génère le message LLM ─────────────────────────────────────
+    message = generer_message_etudiant(
+        profil_input={
+            "gender": student.gender,
+            "disability": student.disability,
             "highest_education": student.highest_education,
         },
+        predictions=response,
+        filiere=conseil_filiere,
+    )
+
+    return {
+        "input": student.model_dump(),
         "multiplicateur_social": round(multiplicateur, 2),
         "predictions": response,
+        "message": message,
     }
