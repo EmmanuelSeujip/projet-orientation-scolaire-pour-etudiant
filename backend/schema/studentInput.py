@@ -1,5 +1,9 @@
+# backend/schema/studentInput.py
+
 from pydantic import BaseModel
-from typing import Literal
+from typing import Literal, Optional
+from backend.schema.profil_social import ProfilSocial  # ← import correct
+
 
 class StudentInput(BaseModel):
     gender: Literal["M", "F"]
@@ -11,3 +15,7 @@ class StudentInput(BaseModel):
         "HE Qualification",
         "Post Graduate Qualification"
     ]
+    profil_social: Optional[ProfilSocial] = None
+
+
+StudentInput.model_rebuild()
