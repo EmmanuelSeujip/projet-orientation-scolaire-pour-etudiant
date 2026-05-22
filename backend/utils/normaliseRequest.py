@@ -33,7 +33,7 @@ METHODES_APPRENTISSAGE_MAP = {
     "cours_classe":{"resource_oucontent": 148.0},
 }
 
-# ⚠️ BUG CORRIGÉ : c'était methodesApprentissage au lieu de methodesExercice
+#  CORRIGÉ : c'était methodesApprentissage au lieu de methodesExercice
 METHODES_EXERCICE_MAP = {
     "epreuves": {"exam_exam": 1.0},   # Q3=0 mais on signal l'intention
     "qcm":      {"exam_cma": 2.0},
@@ -82,5 +82,8 @@ def prepare_send(data: dict) -> dict:
 
     if known_extras:
         payload["known_extras"] = known_extras
+
+    payload["nom_complet"]   = data.get("nomComplet", "")
+    payload["filiere_label"] = data.get("filieresouhaitee", "") 
 
     return payload

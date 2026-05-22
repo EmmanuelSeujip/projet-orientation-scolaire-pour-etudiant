@@ -15,5 +15,7 @@ class StudentInput(BaseModel):
         "gestion_commerce", "sante_medical", "arts_design"
     ]] = None
     known_extras: Optional[Dict[str, Any]] = None  
+    nom_complet: Optional[str] = None
+    filiere_label: Optional[str] = None
 
 StudentInput.model_rebuild()
