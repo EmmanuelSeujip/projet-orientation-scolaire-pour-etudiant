@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, field_validator
 from huggingface_hub import hf_hub_download
@@ -41,7 +42,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+origins = [
+    "http://localhost:5173",  # ton frontend en dev
+    "http://127.0.0.1:5173",  # parfois utile selon config
+]
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,          # domaines autorisés
+    allow_credentials=True,
+    allow_methods=["*"],            # GET, POST, PUT, DELETE...
+    allow_headers=["*"],            # tous les headers
+)
 from backend import all_routers
 for router in all_routers:
     app.include_router(router)

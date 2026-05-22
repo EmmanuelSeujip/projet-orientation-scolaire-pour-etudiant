@@ -3,9 +3,11 @@ import pandas as pd
 import numpy as np
 from backend.routes.forest_predict.encode_input import encode_input
 from backend.schema.studentInput import StudentInput
+from backend.schema.formData import FormData
 from backend.routes.forest_predict.calculer_multiplicateur_risque import calculer_multiplicateur_risque
 from backend.config.filiere import PROFILS_FILIERES
 from backend.routes.forest_predict.generer_message import generer_message_etudiant
+from backend.utils.normaliseRequest import prepare_send
 
 router = APIRouter(prefix="/forest_predict")
 
@@ -13,18 +15,20 @@ LABELS_FINAL_RESULT = {0: "Withdrawn", 1: "Fail", 2: "Pass", 3: "Distinction"}
 
 
 @router.post("/")
-def predict_forest(student: StudentInput, request: Request):
+def predict_forest(raw_data: FormData, request: Request):
+    payload = prepare_send(raw_data.model_dump())
+    student = StudentInput(**payload)
     predictor = request.app.state.predictor
     if predictor is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
 
     known = encode_input(student)
 
-    result_df: pd.DataFrame = predictor.predict(
-        known=known,
-        decode_labels=True,
-        confidence=True,
-    )
+    # ── Injecte les colonnes pré-remplies (méthodes d'apprentissage) ──
+    if student.known_extras:
+        known.update(student.known_extras)
+
+    result_df = predictor.predict(known=known, decode_labels=True, confidence=True)
 
     # ── Multiplicateur social ─────────────────────────────────────
     multiplicateur = 1.0
