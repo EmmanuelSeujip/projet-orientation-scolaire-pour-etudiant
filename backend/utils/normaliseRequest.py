@@ -28,16 +28,16 @@ FILIERES_DICTIONNAIRE = {
 
 # Valeurs Q3 (75e percentile) — niveau "bon usage"
 METHODES_APPRENTISSAGE_MAP = {
-    "en_ligne":    {"resource_url": 10.0},
-    "pdf":         {"resource_resource": 27.0},
-    "cours_classe":{"resource_oucontent": 148.0},
+    "en_ligne":    {"resource_url": 28},
+    "pdf":         {"resource_resource": 53.0},
+    "cours_classe":{"resource_oucontent": 522.0},
 }
 
 #  CORRIGÉ : c'était methodesApprentissage au lieu de methodesExercice
 METHODES_EXERCICE_MAP = {
     "epreuves": {"exam_exam": 1.0},   # Q3=0 mais on signal l'intention
-    "qcm":      {"exam_cma": 2.0},
-    "tuteur":   {"exam_tma": 4.0},
+    "qcm":      {"exam_cma": 5.0},
+    "tuteur":   {"exam_tma": 5.0},
 }
 
 

@@ -1,151 +1,175 @@
 # backend/services/llm_service.py
 
-import json
-import re
+import json, re
 from backend.routes.chat.call_openrouter import call_openrouter
 
-DOCUMENTATION_RESSOURCES = """
-- Contenu principal du cours     : Le matériel textuel central du module
-- Forums de discussion           : Espaces d'échange avec les autres étudiants
-- Page d'accueil du module       : Point d'entrée et navigation générale
-- Sous-pages de navigation       : Sections détaillées du cours
-- Quiz d'entraînement            : Exercices pratiques pour tester ses connaissances
-- Ressources téléchargeables     : Documents PDF et supports de cours
-- Liens externes                 : Ressources complémentaires en dehors de la plateforme
-- Wikis collaboratifs            : Espaces de co-construction des connaissances
-- Glossaire                      : Définitions des termes clés du module
-- Outils de classe virtuelle     : Sessions en direct avec l'enseignant
-- Évaluations tuteur (TMA)       : Devoirs corrigés manuellement par un tuteur
-- QCM automatiques (CMA)         : Tests corrigés automatiquement
-"""
+NOMS_HUMAINS_RESSOURCES = {
+    "resource_oucontent":     "contenu principal du cours",
+    "resource_forumng":       "forums de discussion",
+    "resource_homepage":      "page d'accueil du module",
+    "resource_subpage":       "sous-pages du cours",
+    "resource_quiz":          "quiz d'entraînement",
+    "resource_externalquiz":  "quiz externes",
+    "resource_resource":      "documents PDF et supports de cours",
+    "resource_url":           "liens et ressources externes",
+    "resource_ouwiki":        "wikis collaboratifs",
+    "resource_glossary":      "glossaire du cours",
+    "resource_questionnaire": "sondages de feedback",
+    "resource_oucollaborate": "sessions de classe virtuelle",
+    "exam_tma":               "devoirs corrigés par un tuteur",
+    "exam_cma":               "QCM automatiques",
+}
+
+METRIQUES_HUMAINES = {
+    "note_moyenne":             "Note moyenne",
+    "taux_participation":       "Taux de participation",
+    "moyenne_clics_par_session":"Activité par session",
+    "exam_tma":                 "Devoirs tuteur",
+    "exam_cma":                 "QCM automatiques",
+    "resource_oucontent":       "Lecture du cours",
+    "resource_forumng":         "Participation aux forums",
+    "resource_quiz":            "Quiz d'entraînement",
+    "resource_homepage":        "Navigation générale",
+}
 
 
 def _strip_thinking(text: str) -> str:
-    """
-    Supprime les blocs de réflexion que certains modèles génèrent
-    avant leur réponse finale.
-    """
-    # Balises <think>...</think> (DeepSeek, Qwen, etc.)
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-    # Balises <reflection>...</reflection>
     text = re.sub(r"<reflection>.*?</reflection>", "", text, flags=re.DOTALL)
-    # Lignes "Réflexion :" ou "Thinking :" en début de bloc
-    text = re.sub(r"(?i)^(réflexion|thinking|thought|analysis)\s*:.*?\n\n", "", text, flags=re.DOTALL)
+    text = re.sub(r"(?s)^.*?(?=Bonjour|Cher|Salut|Félicitations)", "", text)
     return text.strip()
 
 
-def generer_message_etudiant(
-    profil_input: dict,
-    predictions: dict,
-    filiere: str | None = None,
-    modele: str = "nvidia/nemotron-3-super-120b-a12b:free"
-) -> str:
-    """
-    Génère un message personnalisé pour l'étudiant à partir des prédictions
-    du modèle ML. L'objectif cible est toujours final_result = Pass.
-
-    Paramètres
-    ──────────
-    profil_input : dict contenant gender, disability, highest_education,
-                   nom_complet (optionnel), filiere_label (optionnel)
-    predictions  : dict retourné par la route /forest_predict
-    filiere      : catégorie de filière (ex: "sciences_exactes")
-    modele       : modèle OpenRouter à utiliser
-    """
-
-    # ── 1. Extraire le prénom ─────────────────────────────────────
-    nom_complet = profil_input.get("nom_complet", "").strip()
-    prenom = nom_complet.split()[0] if nom_complet else None
-
-    # ── 2. Extraire la filière précise ────────────────────────────
-    filiere_precise = profil_input.get("filiere_label", "").strip()
-
-    # ── 3. Construire le contexte filière ─────────────────────────
-    contexte_filiere = ""
-    if filiere_precise:
-        contexte_filiere += f"\n- Filière visée : {filiere_precise}"
-    if filiere:
-        contexte_filiere += f"\n- Catégorie : {filiere.replace('_', ' ').title()}"
-
-    # ── 4. Extraire les prédictions clés ──────────────────────────
-    final_result      = predictions.get("final_result", {})
-    note_moyenne      = predictions.get("note_moyenne", {})
-    taux_participation= predictions.get("taux_participation", {})
-
-    resultat_label    = final_result.get("label", "inconnu")
-    resultat_confiance= final_result.get("confiance", "?")
-    note_val          = round(float(note_moyenne.get("valeur_numerique", 0)), 1)
-    participation_val = round(float(taux_participation.get("valeur_numerique", 0)) * 100, 1)
-
-    # ── 5. Extraire et trier les ressources prédites ──────────────
-    ressources = {
-        col: round(float(val["valeur_numerique"]), 1)
+def _traduire_ressources(predictions: dict) -> dict:
+    """Remplace les noms techniques par des noms humains."""
+    return {
+        NOMS_HUMAINS_RESSOURCES.get(col, col): round(float(val["valeur_numerique"]), 1)
         for col, val in predictions.items()
-        if col.startswith("resource_") and float(val.get("valeur_numerique", 0)) > 0
+        if col.startswith("resource_") or col.startswith("exam_")
+        if float(val.get("valeur_numerique", 0)) > 0
     }
-    ressources_triees = sorted(ressources.items(), key=lambda x: x[1], reverse=True)[:6]
 
-    # ── 6. Construire le prompt ───────────────────────────────────
-    intro_prenom = f"L'étudiant s'appelle {prenom}. Adresse-toi à lui par son prénom." if prenom else ""
 
-    prompt = f"""Tu es un conseiller pédagogique bienveillant et expert en apprentissage en ligne.
-Réponds DIRECTEMENT avec le message final. N'inclus aucune réflexion, analyse préalable, ou introduction méta.
-{intro_prenom}
+def _extraire_comparaison(predictions_1: dict, predictions_2: dict) -> list[dict]:
+    """Identifie les écarts entre situation actuelle et cible Pass."""
+    comparaison = []
+    for col, label in METRIQUES_HUMAINES.items():
+        val_actuel = float(predictions_1.get(col, {}).get("valeur_numerique", 0))
+        val_cible  = float(predictions_2.get(col, {}).get("valeur_numerique", 0))
+        if val_cible > 0:
+            ecart_pct = round(((val_cible - val_actuel) / max(val_cible, 0.01)) * 100, 1)
+            comparaison.append({
+                "metrique": label,
+                "actuel":   round(val_actuel, 2),
+                "cible":    round(val_cible, 2),
+                "effort":   ecart_pct,
+            })
+    return sorted(comparaison, key=lambda x: x["effort"], reverse=True)[:5]
 
-## Profil de l'étudiant
+
+def generer_message_etudiant(
+    profil_input:          dict,
+    predictions_actuelles: dict,
+    predictions_cible:     dict | None = None,
+    filiere:               str | None  = None,
+    est_bon_resultat:      bool        = False,
+    modele:                str         = "nvidia/nemotron-3-super-120b-a12b:free",
+) -> str:
+
+    # ── Prénom ────────────────────────────────────────────────────
+    nom_complet   = profil_input.get("nom_complet", "").strip()
+    prenom        = nom_complet.split()[0] if nom_complet else None
+    filiere_label = profil_input.get("filiere_label", "")
+
+    # ── Données actuelles ─────────────────────────────────────────
+    fr1      = predictions_actuelles.get("final_result", {})
+    note_1   = round(float(predictions_actuelles.get("note_moyenne", {}).get("valeur_numerique", 0)), 1)
+    part_1   = round(float(predictions_actuelles.get("taux_participation", {}).get("valeur_numerique", 0)) * 100, 1)
+    res_1    = _traduire_ressources(predictions_actuelles)
+
+    # ── Contexte filière ──────────────────────────────────────────
+    ctx_filiere = ""
+    if filiere_label:
+        ctx_filiere += f"\n- Filière : {filiere_label}"
+    if filiere:
+        ctx_filiere += f"\n- Catégorie : {filiere.replace('_', ' ').title()}"
+
+    # ── Branche selon résultat ────────────────────────────────────
+    if est_bon_resultat:
+        contexte_mission = f"""
+L'étudiant est sur la bonne voie avec un résultat prédit **{fr1.get("label")}** ({fr1.get("confiance")}).
+Ta mission : félicite-le, renforce ses bonnes habitudes et donne 2-3 pistes pour viser la Distinction.
+"""
+        contexte_comparaison = ""
+    else:
+        note_2  = round(float(predictions_cible.get("note_moyenne", {}).get("valeur_numerique", 0)), 1)
+        part_2  = round(float(predictions_cible.get("taux_participation", {}).get("valeur_numerique", 0)) * 100, 1)
+        res_2   = _traduire_ressources(predictions_cible)
+        comparaison = _extraire_comparaison(predictions_actuelles, predictions_cible)
+
+        contexte_mission = f"""
+Le résultat actuel est **{fr1.get("label")}** ({fr1.get("confiance")}) — c'est préoccupant.
+Ta mission : explique l'écart entre sa situation et ce qu'il faut pour réussir (Pass), 
+recommande des actions concrètes, reste encourageant.
+"""
+        contexte_comparaison = f"""
+## Comparaison : situation actuelle vs ce qu'il faut pour Pass
+- Note moyenne : {note_1}/100 → objectif {note_2}/100
+- Participation : {part_1}% → objectif {part_2}%
+
+Principaux efforts à fournir :
+{json.dumps(comparaison, indent=2, ensure_ascii=False)}
+
+Ressources actuellement utilisées :
+{json.dumps(res_1, indent=2, ensure_ascii=False)}
+
+Ressources d'un profil Pass :
+{json.dumps(res_2, indent=2, ensure_ascii=False)}
+"""
+
+    prompt = f"""Tu es un conseiller pédagogique dans le contexte de l'enseignement supérieur camerounais.
+Tu connais les réalités locales : charge de travail, accès à internet parfois limité, études en parallèle d'un emploi, pression familiale.
+Réponds DIRECTEMENT avec le message. Pas d'analyse préalable. Pas de méta-commentaire.
+{"Adresse-toi à " + prenom + " par son prénom." if prenom else ""}
+
+## Profil
 - Genre : {"Homme" if profil_input.get("gender") == "M" else "Femme"}
-- Handicap déclaré : {"Oui" if profil_input.get("disability") == "Y" else "Non"}
-- Niveau d'éducation : {profil_input.get("highest_education", "non précisé")}
-{contexte_filiere}
+- Handicap : {"Oui" if profil_input.get("disability") == "Y" else "Non"}
+- Niveau : {profil_input.get("highest_education", "non précisé")}
+{ctx_filiere}
 
-## Prédictions du modèle ML
-- Résultat probable : **{resultat_label}** (confiance : {resultat_confiance})
-- Note moyenne estimée : {note_val}/100
-- Taux de participation estimé : {participation_val}%
+## Situation actuelle
+- Résultat prédit : {fr1.get("label")} ({fr1.get("confiance")})
+- Note estimée : {note_1}/100
+- Participation : {part_1}%
 
-## Ressources les plus utilisées par des profils similaires
-{json.dumps(dict(ressources_triees), indent=2, ensure_ascii=False)}
+{contexte_comparaison}
 
-## Documentation des types de ressources
-{DOCUMENTATION_RESSOURCES}
+## Mission
+{contexte_mission}
 
-## Ta mission
-L'objectif est que l'étudiant obtienne **Pass** (réussite du module).
+Rédige exactement 150-200 mots en français. Structure :
+1. Salutation + accroche personnalisée
+2. Explication claire du résultat prédit
+3. 2-3 recommandations concrètes avec noms humains des ressources (jamais les noms techniques)
+4. Conseil adapté au contexte camerounais{" et à la filière " + filiere_label if filiere_label else ""}
+5. Phrase finale encourageante
 
-Rédige un message personnalisé (150-250 mots) qui :
-1. Commence par saluer l'étudiant{"par son prénom" if prenom else ""} avec une phrase d'accroche
-2. Explique clairement ce que prédit le modèle et ce que ça signifie pour lui
-3. Recommande 2-3 types de ressources à prioriser en utilisant leur description humaine, jamais leur nom technique
-4. Donne des conseils adaptés à{"sa filière " + filiere_precise if filiere_precise else "son profil"}
-5. Termine par une phrase encourageante et motivante
+INTERDIT : mentionner resource_quiz, exam_tma, resource_forumng ou tout autre nom de colonne technique."""
 
-Ne mentionne JAMAIS les noms de colonnes techniques (resource_forumng, exam_tma, etc.)."""
-
-    # ── 7. Appel OpenRouter ───────────────────────────────────────
-    payload = {
+    result = call_openrouter({
         "model": modele,
-        "max_tokens": 600,
         "messages": [
             {
                 "role": "system",
-                "content": "Tu es un conseiller pédagogique. Réponds uniquement avec le message demandé, sans réflexion préalable."
+                "content": "Tu es un conseiller pédagogique. Commence directement par le message sans aucune réflexion préalable."
             },
-            {
-                "role": "user",
-                "content": prompt
-            }
+            {"role": "user", "content": prompt}
         ]
-    }
+    })
 
-    result = call_openrouter(payload)
-
-    # ── 8. Vérification et nettoyage ──────────────────────────────
     if "choices" not in result:
         print(f"Erreur OpenRouter : {result}")
-        return (
-            "Désolé, nous n'avons pas pu générer votre conseil personnalisé pour le moment. "
-            "Veuillez réessayer dans quelques instants."
-        )
+        return "Désolé, le conseil personnalisé n'est pas disponible pour le moment."
 
-    message_brut = result["choices"][0]["message"]["content"]
-    return _strip_thinking(message_brut)
+    return _strip_thinking(result["choices"][0]["message"]["content"])
